@@ -5,35 +5,6 @@ from torch.nn import init
 import random
 import numpy as np
 
-def get_onehot(idx, size):
-    t = torch.zeros(size)
-    t[idx] = 1.
-    return t
-
-def init_emb2pos(trainer, args):
-    '''matrix version, unused
-    Usage: 
-        # emb_u.shape: [batch_size, walk_length, dim]
-        batch_emb2posu = torch.stack([emb2posu] * batch_size, dim=0) # shape: [batch_size, num_pos, walk_length]
-        emb_pos_u = torch.bmm(batch_emb2posu, emb_u) # shape: [batch_size, num_pos, dim]
-    '''
-    idx_list_u = []
-    idx_list_v = []
-    for i in range(args.walk_length):
-        for j in range(i-args.window_size, i):
-            if j >= 0:
-                idx_list_u.append(j)
-                idx_list_v.append(i)
-        for j in range(i+1, i+1+args.window_size):
-            if j < args.walk_length:
-                idx_list_u.append(j)
-                idx_list_v.append(i)
-
-    # [num_pos, walk_length]
-    emb2posu = torch.stack([get_onehot(idx, args.walk_length) for idx in idx_list_u]).to(trainer.device)#.to_sparse()
-    emb2posv = torch.stack([get_onehot(idx, args.walk_length) for idx in idx_list_v]).to(trainer.device)#.to_sparse()
-    return emb2posu, emb2posv
-
 def init_emb2pos_index(trainer, args, batch_size):
     '''index version
     Usage:
@@ -46,12 +17,12 @@ def init_emb2pos_index(trainer, args, batch_size):
         for i in range(args.walk_length):
             for j in range(i-args.window_size, i):
                 if j >= 0:
-                    idx_list_u.append(j + b * batch_size)
-                    idx_list_v.append(i + b * batch_size)
+                    idx_list_u.append(j + b * args.walk_length)
+                    idx_list_v.append(i + b * args.walk_length)
             for j in range(i+1, i+1+args.window_size):
                 if j < args.walk_length:
-                    idx_list_u.append(j + b * batch_size)
-                    idx_list_v.append(i + b * batch_size)
+                    idx_list_u.append(j + b * args.walk_length)
+                    idx_list_v.append(i + b * args.walk_length)
 
     # [num_pos * batch_size]
     index_emb_posu = torch.LongTensor(idx_list_u).to(trainer.device)
@@ -60,55 +31,26 @@ def init_emb2pos_index(trainer, args, batch_size):
     return index_emb_posu, index_emb_posv
 
 def init_emb2neg_index(trainer, args, batch_size):
+    '''index version, emb_negv serves for fast negative sampling'''
     idx_list_u = []
-    for i in range(batch_size):
-        for j in range(args.negative):
-            idx_in_batch_u = i * args.walk_length
-            idx_list_u += list(range(idx_in_batch_u, idx_in_batch_u + args.walk_length))
+    for b in range(batch_size):
+        for i in range(args.walk_length):
+            for j in range(i-args.window_size, i):
+                if j >= 0:
+                    idx_list_u += [i + b * args.walk_length] * args.negative
+            for j in range(i+1, i+1+args.window_size):
+                if j < args.walk_length:
+                    idx_list_u += [i + b * args.walk_length] * args.negative
     
-    idx_list_v = list(range(batch_size * args.walk_length)) * args.negative
+    idx_list_v = list(range(batch_size * args.walk_length)) * args.negative * args.window_size * 2
     random.shuffle(idx_list_v)
+    idx_list_v = idx_list_v[:len(idx_list_u)]
 
     # [bs * walk_length * negative]
     index_emb_negu = torch.LongTensor(idx_list_u).to(trainer.device)
     index_emb_negv = torch.LongTensor(idx_list_v).to(trainer.device)
+
     return index_emb_negu, index_emb_negv
-
-def init_emb2neg(trainer, args, batch_size):
-    idx_list_u = []
-    idx_list_v = []
-    for i in range(batch_size):
-        for j in range(args.negative):
-            idx_in_batch_u = i * args.walk_length
-            idx_list_u += list(range(idx_in_batch_u, idx_in_batch_u + args.walk_length))
-            idx_in_batch_v = (i + j + 1) % batch_size * args.walk_length
-            idx_list_v += list(range(idx_in_batch_v, idx_in_batch_v + args.walk_length))
-
-    # [bs * walk_length * negative, bs * walk_length]
-    emb2negu = torch.stack([get_onehot(idx, args.walk_length * batch_size) for idx in idx_list_u]).to(trainer.device)#.to_sparse()
-    emb2negv = torch.stack([get_onehot(idx, args.walk_length * batch_size) for idx in idx_list_v]).to(trainer.device)#.to_sparse()
-    return emb2negu, emb2negv
-
-def init_grad2pos(trainer, args, emb2posu, emb2posv):
-    cnt = 0
-    grad2posu = torch.clone(emb2posu)#.to_dense()
-    grad2posv = torch.clone(emb2posv)#.to_dense()
-    for i in range(args.walk_length):
-        for j in range(i-args.window_size, i):
-            if j >= 0:
-                coeff = 1 - float(i - j - 1) / args.window_size
-                grad2posu[cnt] *= coeff
-                grad2posv[cnt] *= coeff
-                cnt += 1
-        for j in range(i+1, i+1+args.window_size):
-            if j < args.walk_length:
-                coeff = 1 - float(j - i - 1) / args.window_size
-                grad2posu[cnt] *= coeff
-                grad2posv[cnt] *= coeff
-                cnt += 1
-
-    # [walk_length, num_pos]
-    return grad2posu.T, grad2posv.T#.to_sparse()
 
 def init_empty_grad(trainer, args, batch_size):
     grad_u = torch.zeros((batch_size * args.walk_length, trainer.emb_dimension)).to(trainer.device)
@@ -138,7 +80,7 @@ class SkipGramModel(nn.Module):
 
         self.index_emb_posu, self.index_emb_posv = init_emb2pos_index(self, args, args.batch_size)
         self.index_emb_negu, self.index_emb_negv = init_emb2neg_index(self, args, args.batch_size)
-        self.grad_u, self.grad_v = init_empty_grad(self, args, self.batch_size)
+        self.grad_u, self.grad_v = init_empty_grad(self, args, args.batch_size)
 
         initrange = 1.0 / self.emb_dimension
         init.uniform_(self.u_embeddings.weight.data, -initrange, initrange)
@@ -155,14 +97,16 @@ class SkipGramModel(nn.Module):
         self.grad_v.share_memory_()
         self.lookup_table.share_memory_()
 
-    def fast_learn_super(self, batch_walks, lr, neg_v=None):
+    def fast_learn_super(self, batch_walks, lr, neg_nodes=None):
         # [batch_size, walk_length]
         nodes = torch.stack(batch_walks)
         if self.args.only_gpu:
             nodes = nodes.to(self.device)
-
         emb_u = self.u_embeddings.weight[nodes].view(-1, self.emb_dimension).to(self.device)
         emb_v = self.v_embeddings.weight[nodes].view(-1, self.emb_dimension).to(self.device)
+        if neg_nodes is not None:
+            if self.args.only_gpu:
+                neg_nodes = neg_nodes.to(self.device)
 
         ## Postive
         bs = len(batch_walks)
@@ -190,7 +134,7 @@ class SkipGramModel(nn.Module):
         grad_v_pos = sigmoid_score * emb_pos_u
         # [batch_size * walk_length, dim]
         if bs < self.args.batch_size:
-            grad_u, grad_v = init_empty_grad(self, args, bs)
+            grad_u, grad_v = init_empty_grad(self, self.args, bs)
         else:
             self.grad_u.zero_()
             self.grad_v.zero_()
@@ -207,7 +151,10 @@ class SkipGramModel(nn.Module):
             index_emb_negv = self.index_emb_negv
 
         emb_neg_u = torch.index_select(emb_u, 0, index_emb_negu)
-        emb_neg_v = torch.index_select(emb_v, 0, index_emb_negv)
+        if neg_nodes is None:
+            emb_neg_v = torch.index_select(emb_v, 0, index_emb_negv)
+        else:
+            emb_neg_v = self.v_embeddings.weight[neg_nodes].to(self.device)
 
         # [batch_size * walk_length * negative, dim]
         neg_score = torch.sum(torch.mul(emb_neg_u, emb_neg_v), dim=1)
@@ -220,7 +167,8 @@ class SkipGramModel(nn.Module):
         grad_v_neg = self.args.neg_weight * sigmoid_score * emb_neg_u
 
         grad_u.index_add_(0, index_emb_negu, grad_u_neg)
-        grad_v.index_add_(0, index_emb_negv, grad_v_neg)
+        if neg_nodes is None:
+            grad_v.index_add_(0, index_emb_negv, grad_v_neg)
 
         grad_u *= lr
         grad_v *= lr
@@ -228,10 +176,13 @@ class SkipGramModel(nn.Module):
         if self.mixed_train:
             grad_u = grad_u.cpu()
             grad_v = grad_v.cpu()
+            if neg_nodes is not None:
+                grad_v_neg = grad_v_neg.cpu()
             
         self.u_embeddings.weight.data.index_add_(0, nodes.view(-1), grad_u)
         self.v_embeddings.weight.data.index_add_(0, nodes.view(-1), grad_v)
-
+        if neg_nodes is not None:
+            self.v_embeddings.weight.data.index_add_(0, neg_nodes.view(-1), lr * grad_v_neg)
         return
 
     def fast_learn_multi(self, pos_u, pos_v, neg_u, neg_v, lr):
@@ -337,7 +288,6 @@ class SkipGramModel(nn.Module):
         #neg_size = neg_score.shape[1]
         grad_neg_v = torch.clone(sigmoid_score.T.mm(emb_neg_u))
         grad_neg_u = torch.clone(sigmoid_score.mm(emb_neg_v)) 
-
 
         self.v_embeddings.weight.index_add_(0, pos_v, lr * grad_v)
         self.v_embeddings.weight.index_add_(0, neg_v, lr * grad_neg_v)

@@ -90,3 +90,63 @@ def walks2input_chunk(trainer, args, walks, walk2posu, walk2posv):
     sample_time = time.time() - t
     
     return pos_u, pos_v, neg_u, neg_v, sample_time
+
+def init_emb2neg(trainer, args, batch_size):
+    idx_list_u = []
+    idx_list_v = []
+    for i in range(batch_size):
+        for j in range(args.negative):
+            idx_in_batch_u = i * args.walk_length
+            idx_list_u += list(range(idx_in_batch_u, idx_in_batch_u + args.walk_length))
+            idx_in_batch_v = (i + j + 1) % batch_size * args.walk_length
+            idx_list_v += list(range(idx_in_batch_v, idx_in_batch_v + args.walk_length))
+
+    # [bs * walk_length * negative, bs * walk_length]
+    emb2negu = torch.stack([get_onehot(idx, args.walk_length * batch_size) for idx in idx_list_u]).to(trainer.device)#.to_sparse()
+    emb2negv = torch.stack([get_onehot(idx, args.walk_length * batch_size) for idx in idx_list_v]).to(trainer.device)#.to_sparse()
+    return emb2negu, emb2negv
+
+def init_grad2pos(trainer, args, emb2posu, emb2posv):
+    cnt = 0
+    grad2posu = torch.clone(emb2posu)#.to_dense()
+    grad2posv = torch.clone(emb2posv)#.to_dense()
+    for i in range(args.walk_length):
+        for j in range(i-args.window_size, i):
+            if j >= 0:
+                coeff = 1 - float(i - j - 1) / args.window_size
+                grad2posu[cnt] *= coeff
+                grad2posv[cnt] *= coeff
+                cnt += 1
+        for j in range(i+1, i+1+args.window_size):
+            if j < args.walk_length:
+                coeff = 1 - float(j - i - 1) / args.window_size
+                grad2posu[cnt] *= coeff
+                grad2posv[cnt] *= coeff
+                cnt += 1
+
+    # [walk_length, num_pos]
+    return grad2posu.T, grad2posv.T#.to_sparse()
+
+def init_emb2pos(trainer, args):
+    '''matrix version, unused
+    Usage: 
+        # emb_u.shape: [batch_size, walk_length, dim]
+        batch_emb2posu = torch.stack([emb2posu] * batch_size, dim=0) # shape: [batch_size, num_pos, walk_length]
+        emb_pos_u = torch.bmm(batch_emb2posu, emb_u) # shape: [batch_size, num_pos, dim]
+    '''
+    idx_list_u = []
+    idx_list_v = []
+    for i in range(args.walk_length):
+        for j in range(i-args.window_size, i):
+            if j >= 0:
+                idx_list_u.append(j)
+                idx_list_v.append(i)
+        for j in range(i+1, i+1+args.window_size):
+            if j < args.walk_length:
+                idx_list_u.append(j)
+                idx_list_v.append(i)
+
+    # [num_pos, walk_length]
+    emb2posu = torch.stack([get_onehot(idx, args.walk_length) for idx in idx_list_u]).to(trainer.device)#.to_sparse()
+    emb2posv = torch.stack([get_onehot(idx, args.walk_length) for idx in idx_list_v]).to(trainer.device)#.to_sparse()
+    return emb2posu, emb2posv

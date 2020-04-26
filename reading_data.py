@@ -94,13 +94,14 @@ class DeepwalkDataset:
         print("num walks: %d" % len(self.walks))
 
         # negative table for negative sampling
-        node_degree = np.array(list(map(lambda x: len(self.net[x]), self.net.keys())))
-        node_degree = np.power(node_degree, 0.75)
-        node_degree /= np.sum(node_degree)
-        node_degree = np.array(node_degree * 1e8, dtype=np.int)
-        self.neg_table = []
-        for idx, node in enumerate(self.net.keys()):
-            self.neg_table += [node] * node_degree[idx]
-        self.neg_table_size = len(self.neg_table)
-        self.neg_table = np.array(self.neg_table, dtype=np.long)
-        del node_degree
+        if not args.fast_neg:
+            node_degree = np.array(list(map(lambda x: len(self.net[x]), self.net.keys())))
+            node_degree = np.power(node_degree, 0.75)
+            node_degree /= np.sum(node_degree)
+            node_degree = np.array(node_degree * 1e8, dtype=np.int)
+            self.neg_table = []
+            for idx, node in enumerate(self.net.keys()):
+                self.neg_table += [node] * node_degree[idx]
+            self.neg_table_size = len(self.neg_table)
+            self.neg_table = np.array(self.neg_table, dtype=np.long)
+            del node_degree

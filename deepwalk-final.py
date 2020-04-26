@@ -49,7 +49,7 @@ class DeepwalkTrainer:
     def __init__(self, args):
         self.args = args
         self.dataset = DeepwalkDataset(args)
-        self.output_file_name = args.output_file
+        self.output_file_name = args.emb_file
         self.emb_size = len(self.dataset.net)
         self.emb_dimension = args.dim
         self.batch_size = args.batch_size
@@ -148,6 +148,9 @@ def fast_train_sp(trainer, args, walks):
 
 def fast_train(trainer, args):
     """ only gpu, or mixed training with only one gpu"""
+    # the number of postive node pairs of a node sequence
+    num_pos = 2 * args.walk_length * args.window_size - args.window_size * (args.window_size + 1)
+    num_pos = int(num_pos)
     num_batches = len(trainer.dataset.net) * args.num_walks / args.batch_size
     num_batches = int(np.ceil(num_batches))
     print("num batchs: %d" % num_batches)
@@ -175,7 +178,15 @@ def fast_train(trainer, args):
                 if len(walks) == 0:
                     break
 
-                trainer.emb_model.fast_learn_super(walks, lr)
+                if args.fast_neg:
+                    trainer.emb_model.fast_learn_super(walks, lr)
+                else:
+                    bs = len(walks)
+                    neg_nodes = torch.LongTensor(
+                        np.random.choice(trainer.dataset.neg_table, 
+                            bs * num_pos * args.negative, 
+                            replace=True))
+                    trainer.emb_model.fast_learn_super(walks, lr, neg_nodes=neg_nodes)
 
                 i += 1
                 if i > 0 and i % args.print_interval == 0:
@@ -191,7 +202,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="DeepWalk")
     parser.add_argument('--net_file', type=str, 
             help="network file")
-    parser.add_argument('--emb_file', type=str, 
+    parser.add_argument('--emb_file', type=str, default="emb.txt",
             help='embedding file of txt format')
     parser.add_argument('--dim', default=128, type=int, 
             help="embedding dimensions")
@@ -199,7 +210,7 @@ if __name__ == '__main__':
             help="context window size")
     parser.add_argument('--num_walks', default=10, type=int, 
             help="number of walks for each node")
-    parser.add_argument('--negative', default=5, type=int, 
+    parser.add_argument('--negative', default=2, type=int, 
             help="negative samples")
     parser.add_argument('--iterations', default=1, type=int, 
             help="iterations")
@@ -211,7 +222,7 @@ if __name__ == '__main__':
             help="walk length")
     parser.add_argument('--initial_lr', default=0.025, type=float, 
             help="learning rate")
-    parser.add_argument('--neg_weight', default=1., type=float, 
+    parser.add_argument('--neg_weight', default=3., type=float, 
             help="negative weight")
     parser.add_argument('--mix', default=False, action="store_true", 
             help="mixed training with CPU and GPU")
