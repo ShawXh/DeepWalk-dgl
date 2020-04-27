@@ -25,8 +25,8 @@ def init_emb2pos_index(trainer, args, batch_size):
                     idx_list_v.append(i + b * args.walk_length)
 
     # [num_pos * batch_size]
-    index_emb_posu = torch.LongTensor(idx_list_u).to(trainer.device)
-    index_emb_posv = torch.LongTensor(idx_list_v).to(trainer.device)
+    index_emb_posu = torch.LongTensor(idx_list_u)
+    index_emb_posv = torch.LongTensor(idx_list_v)
 
     return index_emb_posu, index_emb_posv
 
@@ -47,24 +47,24 @@ def init_emb2neg_index(trainer, args, batch_size):
     idx_list_v = idx_list_v[:len(idx_list_u)]
 
     # [bs * walk_length * negative]
-    index_emb_negu = torch.LongTensor(idx_list_u).to(trainer.device)
-    index_emb_negv = torch.LongTensor(idx_list_v).to(trainer.device)
+    index_emb_negu = torch.LongTensor(idx_list_u)
+    index_emb_negv = torch.LongTensor(idx_list_v)
 
     return index_emb_negu, index_emb_negv
 
 def init_empty_grad(trainer, args, batch_size):
-    grad_u = torch.zeros((batch_size * args.walk_length, trainer.emb_dimension)).to(trainer.device)
-    grad_v = torch.zeros((batch_size * args.walk_length, trainer.emb_dimension)).to(trainer.device)
+    grad_u = torch.zeros((batch_size * args.walk_length, trainer.emb_dimension))
+    grad_v = torch.zeros((batch_size * args.walk_length, trainer.emb_dimension))
 
     return grad_u, grad_v
 
 class SkipGramModel(nn.Module):
 
-    def __init__(self, emb_size, emb_dimension, device, args):
+    def __init__(self, emb_size, emb_dimension, args):
+        """ initialize embedding on CPU first """
         super(SkipGramModel, self).__init__()
         self.emb_size = emb_size
         self.emb_dimension = emb_dimension
-        self.device = device
         self.mixed_train = args.mix
         self.neg_weight = args.neg_weight
         self.negative = args.negative
@@ -74,7 +74,7 @@ class SkipGramModel(nn.Module):
         # context embedding
         self.v_embeddings = nn.Embedding(emb_size, emb_dimension, sparse=True)
 
-        self.lookup_table = torch.sigmoid(torch.arange(-6.01, 6.01, 0.01).to(device))
+        self.lookup_table = torch.sigmoid(torch.arange(-6.01, 6.01, 0.01))
         self.lookup_table[0] = 0.
         self.lookup_table[-1] = 1.
 
@@ -89,29 +89,32 @@ class SkipGramModel(nn.Module):
     def share_memory(self):
         self.u_embeddings.weight.share_memory_()
         self.v_embeddings.weight.share_memory_()
-        self.index_emb_posu.share_memory_()
-        self.index_emb_posv.share_memory_()
-        self.index_emb_negu.share_memory_()
-        self.index_emb_negv.share_memory_()
-        self.grad_u.share_memory_()
-        self.grad_v.share_memory_()
-        self.lookup_table.share_memory_()
+
+    def set_device(self, gpu_id):
+        self.device = torch.device("cuda:%d" % gpu_id)
+        self.lookup_table = self.lookup_table.to(self.device)
+        self.index_emb_posu = self.index_emb_posu.to(self.device)
+        self.index_emb_posv = self.index_emb_posv.to(self.device)
+        self.index_emb_negu = self.index_emb_negu.to(self.device)
+        self.index_emb_negv = self.index_emb_negv.to(self.device)
+        self.grad_u = self.grad_u.to(self.device)
+        self.grad_v = self.grad_v.to(self.device)
 
     def fast_learn_super(self, batch_walks, lr, neg_nodes=None):
         # [batch_size, walk_length]
+
         nodes = torch.stack(batch_walks)
         if self.args.only_gpu:
             nodes = nodes.to(self.device)
         emb_u = self.u_embeddings.weight[nodes].view(-1, self.emb_dimension).to(self.device)
         emb_v = self.v_embeddings.weight[nodes].view(-1, self.emb_dimension).to(self.device)
-        if neg_nodes is not None:
-            if self.args.only_gpu:
-                neg_nodes = neg_nodes.to(self.device)
 
         ## Postive
         bs = len(batch_walks)
         if bs < self.args.batch_size:
             index_emb_posu, index_emb_posv = init_emb2pos_index(self, self.args, bs)
+            index_emb_posu.to(self.device)
+            index_emb_posv.to(self.device)
         else:
             index_emb_posu = self.index_emb_posu
             index_emb_posv = self.index_emb_posv
@@ -123,6 +126,8 @@ class SkipGramModel(nn.Module):
 
         pos_score = torch.sum(torch.mul(emb_pos_u, emb_pos_v), dim=1)
         pos_score = torch.clamp(pos_score, max=6, min=-6)
+        if torch.sum(torch.isnan(pos_score))>0:
+            print(emb_pos_u)
         idx = torch.floor((pos_score + 6.01) / 0.01).long()
         # [batch_size * num_pos]
         sigmoid_score = self.lookup_table[idx]
@@ -130,14 +135,20 @@ class SkipGramModel(nn.Module):
         sigmoid_score = (1 - sigmoid_score).unsqueeze(1)
 
         # [batch_size * num_pos, dim]
-        grad_u_pos = sigmoid_score * emb_pos_v
-        grad_v_pos = sigmoid_score * emb_pos_u
+        if self.args.lap_norm > 0:
+            grad_u_pos = sigmoid_score * emb_pos_v + self.args.lap_norm * (emb_pos_v - emb_pos_u)
+            grad_v_pos = sigmoid_score * emb_pos_u + self.args.lap_norm * (emb_pos_u - emb_pos_v)
+        else:
+            grad_u_pos = sigmoid_score * emb_pos_v
+            grad_v_pos = sigmoid_score * emb_pos_u
         # [batch_size * walk_length, dim]
         if bs < self.args.batch_size:
             grad_u, grad_v = init_empty_grad(self, self.args, bs)
+            grad_u = grad_u.to(self.device)
+            grad_v = grad_v.to(self.device)
         else:
-            self.grad_u.zero_()
-            self.grad_v.zero_()
+            self.grad_u = self.grad_u.to(self.device).zero_()
+            self.grad_v = self.grad_v.to(self.device).zero_()
             grad_u = self.grad_u
             grad_v = self.grad_v
         grad_u.index_add_(0, index_emb_posu, grad_u_pos)
@@ -146,6 +157,8 @@ class SkipGramModel(nn.Module):
         ## Negative
         if bs < self.args.batch_size:
             index_emb_negu, index_emb_negv = init_emb2neg_index(self, self.args, bs)
+            index_emb_negu = index_emb_negu.to(self.device)
+            index_emb_negu = index_emb_negv.to(self.device)
         else:
             index_emb_negu = self.index_emb_negu
             index_emb_negv = self.index_emb_negv
@@ -154,7 +167,7 @@ class SkipGramModel(nn.Module):
         if neg_nodes is None:
             emb_neg_v = torch.index_select(emb_v, 0, index_emb_negv)
         else:
-            emb_neg_v = self.v_embeddings.weight[neg_nodes].to(self.device)
+            emb_neg_v = self.v_embeddings.weight[neg_nodes].to(self.device).to(self.device)
 
         # [batch_size * walk_length * negative, dim]
         neg_score = torch.sum(torch.mul(emb_neg_u, emb_neg_v), dim=1)

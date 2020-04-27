@@ -56,12 +56,11 @@ class DeepwalkTrainer:
         self.iterations = args.iterations
         self.initial_lr = args.initial_lr
         self.mix = args.mix
-        self.device = torch.device("cpu")
         self.emb_model = None
 
     def init_emb(self):
         self.emb_model = SkipGramModel(self.emb_size, 
-            self.emb_dimension, self.device, self.args)
+            self.emb_dimension, self.args)
 
     def save_emb(self):
         self.emb_model.save_embedding(self.dataset, self.output_file_name)
@@ -74,11 +73,6 @@ def set_device(trainer, args):
     if choices != 1:
         print("Must choose only *one* training mode in [only_cpu, only_gpu, mix]")
         exit(1)
-    trainer.has_cuda = torch.cuda.is_available()
-    if not trainer.has_cuda and args.only_gpu:
-        print("Cuda is not available")
-        exit(1)
-    trainer.device = torch.device("cuda:0" if not args.only_cpu else "cpu")
     trainer.init_emb()
     if args.only_gpu:
         print("Only GPU")
@@ -90,13 +84,15 @@ def set_device(trainer, args):
         print("Only CPU")
         torch.set_num_threads(args.num_threads)
 
-@thread_wrapped_func
+#@thread_wrapped_func
 def fast_train_mp(trainer, args):
     """ only cpu or multi-cpu """
     print("num batchs: %d" % int(len(trainer.dataset.walks) / args.batch_size))
     set_device(trainer, args)
     trainer.share_memory()
     random.shuffle(trainer.dataset.walks)
+
+    #mp.set_start_method('spawn')
 
     start_all = time.time()
     ps = []
@@ -105,7 +101,7 @@ def fast_train_mp(trainer, args):
     nt = args.num_threads
     for i in range(nt):
         walks = trainer.dataset.walks[int(i * l / nt): int((i + 1) * l / nt)]
-        p = mp.Process(target=fast_train_sp, args=(trainer, args, walks))
+        p = mp.Process(target=fast_train_sp, args=(trainer, args, walks, i))
         ps.append(p)
         p.start()
 
@@ -115,10 +111,14 @@ def fast_train_mp(trainer, args):
     print("Used time: %.2fs" % (time.time()-start_all))
     trainer.save_emb()
 
-def fast_train_sp(trainer, args, walks):
-    """ a thread for fast_train_mp """
+def fast_train_sp(trainer, args, walks, gpu_id):
+    """ a subprocess for fast_train_mp """
     num_batches = len(walks) / args.batch_size
     num_batches = int(np.ceil(num_batches))
+    num_pos = 2 * args.walk_length * args.window_size - args.window_size * (args.window_size + 1)
+    num_pos = int(num_pos)
+
+    trainer.emb_model.set_device(gpu_id)
 
     start = time.time()
     with torch.no_grad():
@@ -132,12 +132,20 @@ def fast_train_sp(trainer, args, walks):
 
             # multi-sequence input
             i_ = int(i % num_batches)
-            walks_ = walks[i_*args.batch_size: \
-                    (1+i_)*args.batch_size]
-            if len(walks) == 0:
+            walks_ = walks[i_ * args.batch_size: \
+                    (1+i_) * args.batch_size]
+            if len(walks_) == 0:
                 break
 
-            trainer.emb_model.fast_learn_super(walks_, lr)
+            if args.fast_neg:
+                trainer.emb_model.fast_learn_super(walks_, lr)
+            else:
+                bs = len(walks_)
+                neg_nodes = torch.LongTensor(
+                    np.random.choice(trainer.dataset.neg_table, 
+                        bs * num_pos * args.negative, 
+                        replace=True))
+                trainer.emb_model.fast_learn_super(walks_, lr, neg_nodes=neg_nodes)
 
             i += 1
             if i > 0 and i % args.print_interval == 0:
@@ -146,6 +154,7 @@ def fast_train_sp(trainer, args, walks):
             if i_ == num_batches - 1:
                 break
 
+@thread_wrapped_func
 def fast_train(trainer, args):
     """ only gpu, or mixed training with only one gpu"""
     # the number of postive node pairs of a node sequence
@@ -210,7 +219,7 @@ if __name__ == '__main__':
             help="context window size")
     parser.add_argument('--num_walks', default=10, type=int, 
             help="number of walks for each node")
-    parser.add_argument('--negative', default=2, type=int, 
+    parser.add_argument('--negative', default=5, type=int, 
             help="negative samples")
     parser.add_argument('--iterations', default=1, type=int, 
             help="iterations")
@@ -222,8 +231,10 @@ if __name__ == '__main__':
             help="walk length")
     parser.add_argument('--initial_lr', default=0.025, type=float, 
             help="learning rate")
-    parser.add_argument('--neg_weight', default=3., type=float, 
+    parser.add_argument('--neg_weight', default=1., type=float, 
             help="negative weight")
+    parser.add_argument('--lap-norm', default=-1., type=float, 
+            help="laplacian normalization weight")
     parser.add_argument('--mix', default=False, action="store_true", 
             help="mixed training with CPU and GPU")
     parser.add_argument('--only_cpu', default=False, action="store_true", 
@@ -232,10 +243,13 @@ if __name__ == '__main__':
             help="training with GPU")
     parser.add_argument('--fast_neg', default=False, action="store_true", 
             help="do negative sampling inside a batch")
-    parser.add_argument('--num_threads', default=8, type=int, 
+    parser.add_argument('--num_threads', default=2, type=int, 
             help="number of threads if trained with CPU")
+    parser.add_argument('--num_gpus', default=2, type=int, 
+            help="number of GPUs when mixed training")
     args = parser.parse_args()
 
     trainer = DeepwalkTrainer(args)
-    #fast_train_mp(trainer, args)
-    fast_train(trainer, args)
+    fast_train_mp(trainer, args)
+
+    #fast_train(trainer, args)

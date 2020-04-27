@@ -41,30 +41,6 @@ def ReadTxtNet(file_path=""):
         exit(1)
     return net, node2id, id2node
 
-def ReadCSVNet(file_path=""):
-    """ unused with some potential issues """
-    net = {}
-    with open(file_path, "r") as f:
-        fcsv = csv.reader(f)
-        for row in fcsv:
-            n1, n2 = list(map(int, row))
-            n1 -= 1
-            n2 -= 1
-            try:
-                net[n1][n2] = 1
-            except:
-                net[n1] = {n2: 1}
-            try:
-                net[n2][n1] = 1
-            except:
-                net[n2] = {n1: 1}
-    print("node num: %d" % len(net))
-    print("edge num: %d" % (sum(list(map(lambda i: len(net[i]), net.keys())))/2))
-    if max(net.keys()) != len(net) - 1:
-        print("error reading net, quit")
-        exit(1)
-    return net
-
 def net2graph(net):
     G = dgl.DGLGraph()
     G.add_nodes(len(net))
@@ -91,7 +67,7 @@ class DeepwalkDataset:
         self.walks = list(walks.view(-1, self.walk_length))
         end = time.time()
         t = (end - start) / len(walks)
-        print("num walks: %d" % len(self.walks))
+        print("%d walks in %.2fs" % (len(self.walks), t))
 
         # negative table for negative sampling
         if not args.fast_neg:
