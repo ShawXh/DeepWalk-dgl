@@ -32,3 +32,5 @@ Baseline:
 | Implementation | Macro-F1 <br> 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% | Micro-F1 <br> 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% |
 | ----|----|----|
 | gensim.word2vec | 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% | 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% |
+| gensim.word2vec | 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% | 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% |
+| gensim.word2vec | 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% | 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% |
