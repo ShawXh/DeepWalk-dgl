@@ -22,3 +22,13 @@ Format of embedding file:
 ```
 
 To evalutate embedding on multi-label classification, please refer to [here](https://github.com/ShawXh/Evaluate-Embedding)
+
+## Evaluation
+
+YouTube (1M nodes)
+
+Baseline: 
+
+| Implementation | Time <br> PyG &emsp;&emsp; DGL | Memory <br> PyG &emsp;&emsp; DGL    |
+| ------:|:---------------------:|:-------------------:|
+| Cora | 0.478&emsp;&emsp; 0.666 |  1.2 &emsp;&emsp; 1.1 |
