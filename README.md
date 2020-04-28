@@ -29,6 +29,6 @@ YouTube (1M nodes)
 
 Baseline: 
 
-| Implementation | Time <br> PyG &emsp;&emsp; DGL | Memory <br> PyG &emsp;&emsp; DGL    |
-| ------:|:---------------------:|:-------------------:|
-| Cora | 0.478&emsp;&emsp; 0.666 |  1.2 &emsp;&emsp; 1.1 |
+| Implementation | Macro-F1 <br> 10% &emsp;&emsp; 30% | 30% &emsp;&emsp; 30%| Micro-F1 <br>  &emsp;&emsp; DGL    |
+| ------|------|-------|-------|
+| Cora | 0.478 &emsp;&emsp; 0.666 |  1.2 &emsp;&emsp; 1.1 |
