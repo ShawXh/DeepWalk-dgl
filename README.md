@@ -31,6 +31,8 @@ walk_length = 80, number_walks = 10, window_size = 5, workers = 8
 
 | Implementation | Macro-F1 (%) <br> 1% &emsp;&emsp; 3% &emsp;&emsp; 5% &emsp;&emsp; 7% &emsp;&emsp; 9% | Micro-F1 (%) <br> 1% &emsp;&emsp; 3% &emsp;&emsp; 5% &emsp;&emsp; 7% &emsp;&emsp; 9% | Time (s) |
 |----|----|----|----|
-| gensim.word2vec(hs) | 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% | 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% | 0.0 |
-| gensim.word2vec(ns) | 28.18 &emsp;&emsp; 32.25 &emsp;&emsp; 33.56 &emsp;&emsp; 34.60 &emsp;&emsp; 35.22 | 35.35 &emsp;&emsp; 37.69 &emsp;&emsp; 38.08 &emsp;&emsp; 40.24 &emsp;&emsp; 41.09 | 10580.3(1704.3) |
-| gensim.word2vec | 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% | 10% &emsp;&emsp; 30% &emsp;&emsp; 50% &emsp;&emsp; 70% &emsp;&emsp; 90% | 0.0 |
+| gensim.word2vec(hs) | 28.73 &emsp; 32.51 &emsp; 33.67 &emsp; 34.28 &emsp; 34.79 | 35.73 &emsp; 38.34 &emsp; 39.37 &emsp; 40.08 &emsp; 40.77 | 27119.6(1759.8) |
+| gensim.word2vec(ns) | 28.18 &emsp; 32.25 &emsp; 33.56 &emsp; 34.60 &emsp; 35.22 | 35.35 &emsp; 37.69 &emsp; 38.08 &emsp; 40.24 &emsp; 41.09 | 10580.3(1704.3) |
+|        ours         | 21.30 &emsp; 27.19 &emsp; 29.97 &emsp; 31.41 &emsp; 32.37 | 35.34 &emsp; 39.70 &emsp; 41.05 &emsp; 42.39 &emsp; 42.96 | 4400.0 + 195.8 |
+
+2GPU, lr = 0.005, batchs_size = 512, lap = 0.01, time = 4399.99

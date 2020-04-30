@@ -66,7 +66,7 @@ class DeepwalkDataset:
                 self.num_walks, self.walk_length-1)
         self.walks = list(walks.view(-1, self.walk_length))
         end = time.time()
-        t = (end - start) / len(walks)
+        t = end - start
         print("%d walks in %.2fs" % (len(self.walks), t))
 
         # negative table for negative sampling

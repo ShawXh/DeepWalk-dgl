@@ -54,7 +54,7 @@ class DeepwalkTrainer:
         self.emb_dimension = args.dim
         self.batch_size = args.batch_size
         self.iterations = args.iterations
-        self.initial_lr = args.initial_lr
+        self.lr = args.lr
         self.mix = args.mix
         self.emb_model = None
 
@@ -73,34 +73,36 @@ def set_device(trainer, args):
     if choices != 1:
         print("Must choose only *one* training mode in [only_cpu, only_gpu, mix]")
         exit(1)
+    if args.num_procs < 1:
+        print("The number of process must be larger than 1")
+        exit(1)
     trainer.init_emb()
+    torch.set_num_threads(args.num_threads)
     if args.only_gpu:
-        print("Only GPU")
+        print("Run in 1 GPU")
+        trainer.emb_model.set_device(0)
         trainer.emb_model.cuda()
     elif args.mix:
-        print("Mix CPU & GPU")
-        torch.set_num_threads(args.num_threads)
+        print("Mix CPU with %d GPU" % args.num_procs)
+        if args.num_procs == 1:
+            trainer.emb_model.set_device(0)
     else:
-        print("Only CPU")
-        torch.set_num_threads(args.num_threads)
+        print("Run in %d CPU" % args.num_procs)
 
 #@thread_wrapped_func
 def fast_train_mp(trainer, args):
-    """ only cpu or multi-cpu """
-    print("num batchs: %d" % int(len(trainer.dataset.walks) / args.batch_size))
+    """ multi-cpu or mix multi-gpu """
     set_device(trainer, args)
     trainer.share_memory()
     random.shuffle(trainer.dataset.walks)
-
-    #mp.set_start_method('spawn')
 
     start_all = time.time()
     ps = []
 
     l = len(trainer.dataset.walks)
-    nt = args.num_threads
-    for i in range(nt):
-        walks = trainer.dataset.walks[int(i * l / nt): int((i + 1) * l / nt)]
+    np = args.num_procs
+    for i in range(np):
+        walks = trainer.dataset.walks[int(i * l / np): int((i + 1) * l / np)]
         p = mp.Process(target=fast_train_sp, args=(trainer, args, walks, i))
         ps.append(p)
         p.start()
@@ -113,11 +115,10 @@ def fast_train_mp(trainer, args):
 
 def fast_train_sp(trainer, args, walks, gpu_id):
     """ a subprocess for fast_train_mp """
-    num_batches = len(walks) / args.batch_size
-    num_batches = int(np.ceil(num_batches))
-    num_pos = 2 * args.walk_length * args.window_size - args.window_size * (args.window_size + 1)
-    num_pos = int(num_pos)
-
+    num_batches = int(np.ceil(len(walks) / args.batch_size))
+    num_pos = int(2 * args.walk_length * args.window_size\
+        - args.window_size * (args.window_size + 1))
+    print("num batchs: %d in subprocess [%d]" % (num_batches, gpu_id))
     trainer.emb_model.set_device(gpu_id)
 
     start = time.time()
@@ -126,7 +127,7 @@ def fast_train_sp(trainer, args, walks, gpu_id):
         max_i = args.iterations * num_batches
         
         while True:
-            lr = args.initial_lr * (max_i - i) / max_i
+            lr = args.lr * (max_i - i) / max_i
             if lr < 0.00001:
                 lr = 0.00001
 
@@ -149,14 +150,13 @@ def fast_train_sp(trainer, args, walks, gpu_id):
 
             i += 1
             if i > 0 and i % args.print_interval == 0:
-                print("Batch %d, tt: %.2fs" % (i, time.time()-start))
+                print("Solver [%d] batch %d tt: %.2fs" % (gpu_id, i, time.time()-start))
                 start = time.time()
             if i_ == num_batches - 1:
                 break
 
-@thread_wrapped_func
 def fast_train(trainer, args):
-    """ only gpu, or mixed training with only one gpu"""
+    """ one process """
     # the number of postive node pairs of a node sequence
     num_pos = 2 * args.walk_length * args.window_size - args.window_size * (args.window_size + 1)
     num_pos = int(num_pos)
@@ -176,7 +176,7 @@ def fast_train(trainer, args):
             random.shuffle(trainer.dataset.walks)
 
             while True:
-                lr = args.initial_lr * (max_i - i) / max_i
+                lr = args.lr * (max_i - i) / max_i
                 if lr < 0.00001:
                     lr = 0.00001
 
@@ -229,7 +229,7 @@ if __name__ == '__main__':
             help="print interval")
     parser.add_argument('--walk_length', default=80, type=int, 
             help="walk length")
-    parser.add_argument('--initial_lr', default=0.025, type=float, 
+    parser.add_argument('--lr', default=0.025, type=float, 
             help="learning rate")
     parser.add_argument('--neg_weight', default=1., type=float, 
             help="negative weight")
@@ -243,13 +243,16 @@ if __name__ == '__main__':
             help="training with GPU")
     parser.add_argument('--fast_neg', default=False, action="store_true", 
             help="do negative sampling inside a batch")
-    parser.add_argument('--num_threads', default=2, type=int, 
+    parser.add_argument('--avg', default=False, action="store_true", 
+            help="do negative sampling inside a batch")
+    parser.add_argument('--num_threads', default=8, type=int, 
             help="number of threads if trained with CPU")
-    parser.add_argument('--num_gpus', default=2, type=int, 
-            help="number of GPUs when mixed training")
+    parser.add_argument('--num_procs', default=1, type=int, 
+            help="number of GPUs/CPUs when mixed training")
     args = parser.parse_args()
 
     trainer = DeepwalkTrainer(args)
-    fast_train_mp(trainer, args)
-
-    #fast_train(trainer, args)
+    if args.num_procs > 1:
+        fast_train_mp(trainer, args)
+    else:
+        fast_train(trainer, args)
