@@ -69,7 +69,7 @@ class DeepwalkDataset:
         t = end - start
         print("%d walks in %.2fs" % (len(self.walks), t))
 
-        # negative table for negative sampling
+        # negative table for true negative sampling
         if not args.fast_neg:
             node_degree = np.array(list(map(lambda x: len(self.net[x]), self.net.keys())))
             node_degree = np.power(node_degree, 0.75)

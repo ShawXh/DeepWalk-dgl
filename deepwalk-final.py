@@ -76,20 +76,22 @@ def set_device(trainer, args):
     if args.num_procs < 1:
         print("The number of process must be larger than 1")
         exit(1)
+    choices = sum([args.sgd, args.adam, args.avg_sgd])
+    if choices != 1:
+        print("Must choose only *one* gradient descent strategy in [sgd, avg_sgd, adam]")
+        exit(1)
     trainer.init_emb()
     torch.set_num_threads(args.num_threads)
     if args.only_gpu:
         print("Run in 1 GPU")
-        trainer.emb_model.set_device(0)
-        trainer.emb_model.cuda()
+        trainer.emb_model.all_to_device(0)
     elif args.mix:
         print("Mix CPU with %d GPU" % args.num_procs)
         if args.num_procs == 1:
             trainer.emb_model.set_device(0)
     else:
-        print("Run in %d CPU" % args.num_procs)
+        print("Run in %d CPU process" % args.num_procs)
 
-#@thread_wrapped_func
 def fast_train_mp(trainer, args):
     """ multi-cpu or mix multi-gpu """
     set_device(trainer, args)
@@ -113,6 +115,7 @@ def fast_train_mp(trainer, args):
     print("Used time: %.2fs" % (time.time()-start_all))
     trainer.save_emb()
 
+@thread_wrapped_func
 def fast_train_sp(trainer, args, walks, gpu_id):
     """ a subprocess for fast_train_mp """
     num_batches = int(np.ceil(len(walks) / args.batch_size))
@@ -120,6 +123,7 @@ def fast_train_sp(trainer, args, walks, gpu_id):
         - args.window_size * (args.window_size + 1))
     print("num batchs: %d in subprocess [%d]" % (num_batches, gpu_id))
     trainer.emb_model.set_device(gpu_id)
+    torch.set_num_threads(args.num_threads)
 
     start = time.time()
     with torch.no_grad():
@@ -204,7 +208,7 @@ def fast_train(trainer, args):
                 if i_ == num_batches - 1:
                     break
 
-    print("Used time: %.2fs" % (time.time()-start_all))
+    print("Training used time: %.2fs" % (time.time()-start_all))
     trainer.save_emb()
 
 if __name__ == '__main__':
@@ -233,26 +237,32 @@ if __name__ == '__main__':
             help="learning rate")
     parser.add_argument('--neg_weight', default=1., type=float, 
             help="negative weight")
-    parser.add_argument('--lap-norm', default=-1., type=float, 
-            help="laplacian normalization weight")
+    parser.add_argument('--lap_norm', default=0.01, type=float, 
+            help="weight of laplacian normalization")
     parser.add_argument('--mix', default=False, action="store_true", 
             help="mixed training with CPU and GPU")
     parser.add_argument('--only_cpu', default=False, action="store_true", 
             help="training with CPU")
     parser.add_argument('--only_gpu', default=False, action="store_true", 
             help="training with GPU")
-    parser.add_argument('--fast_neg', default=False, action="store_true", 
+    parser.add_argument('--fast_neg', default=True, action="store_true", 
             help="do negative sampling inside a batch")
-    parser.add_argument('--avg', default=False, action="store_true", 
-            help="do negative sampling inside a batch")
+    parser.add_argument('--adam', default=True, action="store_true", 
+            help="use adam for embedding updation")
+    parser.add_argument('--sgd', default=False, action="store_true", 
+            help="use sgd for embedding updation")
+    parser.add_argument('--avg_sgd', default=False, action="store_true", 
+            help="average gradients of sgd for embedding updation")
     parser.add_argument('--num_threads', default=8, type=int, 
-            help="number of threads if trained with CPU")
+            help="number of threads used on CPU")
     parser.add_argument('--num_procs', default=1, type=int, 
             help="number of GPUs/CPUs when mixed training")
     args = parser.parse_args()
 
+    start_time = time.time()
     trainer = DeepwalkTrainer(args)
     if args.num_procs > 1:
         fast_train_mp(trainer, args)
     else:
         fast_train(trainer, args)
+    print("Total used time: %.2f" % (time.time() - start_time))
