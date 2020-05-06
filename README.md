@@ -42,7 +42,8 @@ YouTube (1M nodes).
 
 The comparison between running time is shown as below, where the numbers in the brackets are time used on random-walk.
 
-|----------| gensim.word2vec(hs) | gensim.word2vec(ns) | Ours |
+| Implementation | gensim.word2vec(hs) | gensim.word2vec(ns) | Ours |
+|----|----|----|----|
 | Time (s) |    27119.6(1759.8)  |   10580.3(1704.3)   | 631.92(175.66) |
 
 Parameters.
