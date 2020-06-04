@@ -1,3 +1,7 @@
+# Notation
+
+This is a test ropo. The released version is [here](https://github.com/dmlc/dgl/tree/master/examples/pytorch/deepwalk).
+
 # DeepWalk
 
 - Paper link: [here](https://arxiv.org/pdf/1403.6652.pdf)
@@ -8,6 +12,10 @@ The implementation includes multi-processing training with CPU and mixed trainin
 ## Dependencies
 - PyTorch 1.0.1+
 
+## Tested version
+- PyTorch 1.5.0
+- DGL 0.4.3
+
 ## How to run the code
 
 Format of a network file:
@@ -16,21 +24,23 @@ Format of a network file:
 1 3
 ...
 ```
-Format of embedding file:
-```
-1(node id) 0.1 0.34 0.5 ...
-2(node id) 0.5 0.4 0.6 ...
-...
-```
 
 To run the code:
 ```
 python3 deepwalk.py --net_file net.txt --emb_file emb.txt --adam --mix --lr 0.2 --num_procs 4 --batch_size 100 --negative 5
 ```
 
-To evalutate embedding on multi-label classification, please refer to [here](https://github.com/ShawXh/Evaluate-Embedding)
+## How to save the embedding
+
+Functions:
+```
+SkipGramModel.save_embedding(dataset, file_name)
+SkipGramModel.save_embedding_txt(dataset, file_name)
+```
 
 ## Evaluation
+
+To evalutate embedding on multi-label classification, please refer to [here](https://github.com/ShawXh/Evaluate-Embedding)
 
 YouTube (1M nodes).
 
@@ -40,13 +50,18 @@ YouTube (1M nodes).
 | gensim.word2vec(ns) | 28.18 &emsp; 32.25 &emsp; 33.56 &emsp; 34.60 &emsp; 35.22 | 35.35 &emsp; 37.69 &emsp; 38.08 &emsp; 40.24 &emsp; 41.09 | 
 |        ours         | 24.58 &emsp; 31.23 &emsp; 33.97 &emsp; 35.41 &emsp; 36.48 | 38.93 &emsp; 43.17 &emsp; 44.73 &emsp; 45.42 &emsp; 45.92 | 
 
-The comparison between running time is shown as below, where the numbers in the brackets are time used on random-walk.
+The comparison between running time is shown as below, where the numbers in the brackets denote time used on random-walk.
 
 | Implementation | gensim.word2vec(hs) | gensim.word2vec(ns) | Ours |
 |----|----|----|----|
-| Time (s) |    27119.6(1759.8)  |   10580.3(1704.3)   | 631.92(175.66) |
+| Time (s) |     27119.6(1759.8)    |    10580.3(1704.3)    | 428.89 |
 
 Parameters.
 - walk_length = 80, number_walks = 10, window_size = 5
-- Ours: 4GPU (Tesla V100), lr = 0.2, batchs_size = 256, neg_weight = 5, negative = 1
+- Ours: 4GPU (Tesla V100), lr = 0.2, batchs_size = 128, neg_weight = 5, negative = 1, num_thread = 4
 - Others: workers = 8, negative = 5
+
+Speeding-up with mixed CPU & multi-GPU. The used parameters are the same as above.
+|  #GPUs   |   1   |   2   |   4   |
+|----------|-------|-------|-------|
+| Time (s) |1419.64| 952.04|428.89 |
