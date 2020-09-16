@@ -1,6 +1,6 @@
-# Notation
+# Notations
 
-This is a test ropo. The released version is [here](https://github.com/dmlc/dgl/tree/master/examples/pytorch/deepwalk).
+This is a test ropo. The released version is [here](https://github.com/dmlc/dgl/tree/master/examples/pytorch/ogb/deepwalk).
 
 # DeepWalk
 
