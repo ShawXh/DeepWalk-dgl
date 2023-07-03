@@ -1,4 +1,4 @@
-# Notations
+# Notification
 
 This is a test ropo. The released version is [here](https://github.com/dmlc/dgl/tree/master/examples/pytorch/ogb/deepwalk).
 
